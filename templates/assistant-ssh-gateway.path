@@ -1,0 +1,8 @@
+[Unit]
+Description=Watch assistant profiles for new SSH keys
+
+[Path]
+PathChanged=%h/setup
+
+[Install]
+WantedBy=default.target

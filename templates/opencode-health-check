@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+if ! curl -m 30 -sf http://localhost:4096/health > /dev/null 2>&1; then
+    logger -t opencode-health "opencode unresponsive after 30s, restarting"
+    systemctl --user restart opencode.service
+fi

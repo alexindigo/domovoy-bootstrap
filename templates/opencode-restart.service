@@ -1,0 +1,6 @@
+[Unit]
+Description=Nightly opencode restart
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/systemctl --user try-restart opencode.service

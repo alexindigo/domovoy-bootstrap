@@ -1,0 +1,2 @@
+#!/usr/bin/env bash
+cat /home/assistant/setup/*/ssh.pub > /home/assistant/.ssh/authorized_keys

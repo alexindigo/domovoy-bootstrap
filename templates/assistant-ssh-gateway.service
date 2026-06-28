@@ -1,0 +1,6 @@
+[Unit]
+Description=Rebuild SSH authorized_keys from assistant profiles
+
+[Service]
+Type=oneshot
+ExecStart=%h/.local/bin/rebuild-authorized-keys

@@ -1,0 +1,9 @@
+[Unit]
+Description=Check opencode health every 30s
+
+[Timer]
+OnUnitActiveSec=30s
+AccuracySec=2s
+
+[Install]
+WantedBy=timers.target
