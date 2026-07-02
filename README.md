@@ -11,3 +11,6 @@ Domovoys can reach each other.
 - **migrate.sh.template** — migration script template (the domovoy agent fills in placeholders, then the user runs it)
 - **AGENTS.md** — reference identity and safety rules (merge into your own, never blindly replace)
 - **templates/** — ready-to-use systemd units and scripts
+
+## Related
+- [domovoy-skills](https://github.com/alexindigo/domovoy-skills) — the open-source skill library for Domovoy
