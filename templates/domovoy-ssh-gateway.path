@@ -1,5 +1,5 @@
 [Unit]
-Description=Watch assistant profiles for new SSH keys
+Description=Watch domovoy profiles for new SSH keys
 
 [Path]
 PathChanged=%h/setup

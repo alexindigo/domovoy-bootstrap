@@ -1,2 +1,2 @@
 #!/usr/bin/env bash
-cat /home/assistant/setup/*/ssh.pub > /home/assistant/.ssh/authorized_keys
+cat /home/domovoy/setup/*/ssh.pub > /home/domovoy/.ssh/authorized_keys

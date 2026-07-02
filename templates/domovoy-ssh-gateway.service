@@ -1,5 +1,5 @@
 [Unit]
-Description=Rebuild SSH authorized_keys from assistant profiles
+Description=Rebuild SSH authorized_keys from domovoy profiles
 
 [Service]
 Type=oneshot

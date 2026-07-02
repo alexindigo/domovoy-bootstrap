@@ -1,157 +1,185 @@
-# MIGRATION — Move opencode from root to assistant user
+# MIGRATION — Move opencode to the `domovoy` user
 
-If you have opencode running as root with config files in `/root/`, this guide explains how to migrate everything to a proper non-root `assistant` user. The assistant becomes a first-class user with its own home, service, health monitoring, and cross-machine sync.
+This guide migrates an existing opencode setup to a dedicated **`domovoy` system
+user** (UID 588) with its own home, user-level service, health monitoring, and
+cross-machine Syncthing sync.
 
-## What gets migrated
+It covers **three source scenarios** — migrate FROM:
 
-| From (root) | To (assistant) |
-|-------------|----------------|
-| `/root/AGENTS.md` | `/home/assistant/.agents/AGENTS.md` → symlinked to `~/AGENTS.md` |
-| `/root/.opencode/` | `/home/assistant/.agents/` (agents, commands, modes, plugins, skills, tools, themes) |
-| `/root/.config/opencode/opencode.jsonc` | `/home/assistant/.config/opencode/opencode.jsonc` |
-| `/root/.local/share/opencode/` | `/home/assistant/.local/share/opencode/` (sessions, auth, database) |
-| `/root/.local/state/opencode/` | `/home/assistant/.local/state/opencode/` (runtime state) |
-| `/root/.cache/opencode/` | `/home/assistant/.cache/opencode/` (cache) |
-| `/root/docs/` or machine profiles | `/home/assistant/setup/<hostname>/` |
-| `/root/maintenance/reports/` | `/home/assistant/maintenance/reports/` |
-| System-level opencode service | User-level service under `assistant` |
-| System-level health/restart timers | User-level timers under `assistant` |
+| Source | Typical signs | Strategy |
+|--------|---------------|----------|
+| **`root`** | opencode config in `/root/`, runs as a system service or one-off | **copy** root → domovoy (§A) |
+| **a prior agent user** (e.g. `assistant`, or any earlier name) | opencode runs as a dedicated non-domovoy user with its own home | **copy-then-cutover** (§B) — the safest, reversible path |
+| **a regular human `user`** | opencode runs under your normal login account | **copy** selected opencode data → domovoy (§C) |
 
-The migration preserves all session data (conversations, auth, settings). Nothing is lost.
+The Domovoy identity (`domovoy`, UID 588) is the same regardless of source. Only
+the *source* differs. Read the scenario that matches you.
 
-### How skills and configs are merged
+---
 
-The `.opencode/` directory contains subdirectories for agents, commands, modes, plugins,
-skills, tools, and themes. During migration, the agent reviews all of these and makes
-intelligent decisions — it does NOT blindly copy or overwrite.
+## Core principles (all scenarios)
 
-- **If a subdirectory already exists** in the destination, the script prompts before overwriting.
-- **The agent prepares merge notes** explaining which customizations were preserved and why.
-- **The user reviews and approves** before the script runs.
+1. **The agent prepares; the human executes the cutover.** opencode runs *inside*
+   itself — it cannot stop/restart its own service. The agent audits, copies
+   durable data, and writes a cutover script; **you** run that script from a root
+   TTY while opencode is stopped, then reconnect.
+2. **Copy, don't move (until verified).** Keep the source intact as a fallback
+   until the new `domovoy` is confirmed working. Delete the old identity only
+   after verification.
+3. **Nothing is lost.** All session data (conversations, auth, database, settings)
+   is preserved. AGENTS.md is *merged*, never blindly overwritten.
+4. **System user.** `domovoy` is created with `useradd -r ... -u 588` (see
+   BOOTSTRAP.md for the shell-choice rationale: `bash` if it will collaborate with
+   other Domovoys over SSH, else `nologin`).
 
-This avoids the scenario where a stock skill is overwritten by a customized one, or
-vice versa. The agent understands the contents and asks for human judgment.
+### What gets migrated (opencode data — common to all sources)
 
-## How migration works
+| Data | Destination |
+|------|-------------|
+| AGENTS.md / identity | `/home/domovoy/.agents/AGENTS.md` → symlinked to `~/AGENTS.md` (merged) |
+| skills, agents, commands, modes, plugins, tools, themes | `/home/domovoy/.agents/` |
+| `opencode.jsonc` provider config | `/home/domovoy/.config/opencode/` |
+| sessions, auth, database | `/home/domovoy/.local/share/opencode/` |
+| runtime state | `/home/domovoy/.local/state/opencode/` |
+| cache | `/home/domovoy/.cache/opencode/` |
+| machine profiles / docs | `/home/domovoy/setup/<hostname>/` |
+| maintenance reports | `/home/domovoy/maintenance/reports/` |
+| service + timers | user-level under `domovoy` (health check, nightly restart) |
 
-Migration is a two-stage process:
+**Regenerable, do NOT migrate** (discard; they rebuild on first run): `.npm`,
+`.cache/*` (non-opencode), compiler/build temp (`/tmp/...`).
 
-1. **The assistant agent audits** the existing root-based setup, merges the AGENTS.md,
-   finds all session files, and customizes `migrate.sh.template` into `migrate.sh`
+---
 
-2. **You (the user) review** the customized script, stop opencode, and run `sudo bash migrate.sh`
+## §A — Migrate FROM `root`
 
-The agent cannot stop opencode (it runs inside it). The agent cannot run the migration
-script (it needs to run as root while opencode is stopped). The agent prepares everything;
-you execute.
+opencode was set up as root with config under `/root/`.
 
-## Agent's workflow (what the assistant does)
+1. **Audit** `/root/` for the data above; check whether opencode runs as a
+   system service or a one-off process.
+2. **Merge AGENTS.md** — preserve the operator's conventions (hostname context,
+   AUR policy, pronouns, custom rules); add the essential safety rules from this
+   repo's AGENTS.md; rewrite paths `/root/...` → `~/...` and identity `root` →
+   `domovoy`.
+3. **Fill `migrate.sh.template`** (`__FILL_HOSTNAME__`, `EXTRA_FILES`, merge
+   notes) → `migrate.sh`. Present to the human.
+4. **Human:** stop opencode (`systemctl stop opencode.service` or
+   `kill $(pgrep -f opencode)`), then `sudo bash migrate.sh`.
+5. The script creates `domovoy`, copies files, installs the user service +
+   timers, sets up Syncthing + SSH gateway, and prompts to remove old `/root/`
+   files (backups remain under `/home/domovoy/`).
 
-### 1. Audit the existing setup
+---
 
-The agent reads:
-- `/root/AGENTS.md` — existing identity and rules
-- `/root/.config/opencode/opencode.jsonc` — provider config
-- `/root/.opencode/skills/` — any skill files
-- `/root/.local/share/opencode/` — session database (conversations)
-- `/root/.local/state/opencode/` — runtime state
-- `/root/.cache/opencode/` — cache
-- `/root/docs/`, `/root/maintenance/` — any documentation or reports
+## §B — Migrate FROM a prior agent user (e.g. `assistant`)
 
-It also checks whether opencode runs as a system-level service or as a one-off process.
+The machine already runs opencode as a dedicated agent user with its own home
+(e.g. `assistant` at `/home/assistant`). This is a **rename+renumber**, and the
+safest approach is **copy-then-cutover** — the old user stays a live fallback
+until the new one is verified. (This is the exact path Domovoy itself took from
+its original `assistant` identity.)
 
-### 2. Merge AGENTS.md
+### Phase A — Create domovoy + copy durable data (agent does this; old user keeps running)
 
-The agent creates a merged AGENTS.md that preserves the user's accumulated conventions
-while adding essential safety rules:
+- `useradd -r -m -d /home/domovoy -s <shell> -u 588 -U domovoy`; sudoers; linger.
+- **Copy** (not move) durable data → `/home/domovoy`, chown 588:
+  `.agents/`, `setup/`, `maintenance/`, `docs/`, `.config/systemd/user/`,
+  `.local/bin/`, `.local/state/`, bash rc files, the `AGENTS.md` symlink.
+- **Fix enabled-unit `.wants` symlinks** — they may be absolute, pointing back at
+  the old home; re-point them to `/home/domovoy/...` own unit files.
+- **Defer** large, not-in-use dirs (`models/`, `aur/`) to after cutover (move
+  them then — instant rename if on the same filesystem).
 
-- **Preserved from old AGENTS.md:** hostname-specific context, user conventions, AUR policy, pronouns, any custom rules
-- **Added (from this repo's AGENTS.md):** NEVER restart opencode, NEVER open ports, package installation convention, maintenance report rules
-- **Updated:** paths (`/root/maintenance/` → `~/maintenance/`), user identity (`root` → `assistant`), sudo instructions
+### Phase A (Syncthing) — device-ID carryover
 
-The merged file goes to `/home/assistant/.agents/AGENTS.md`. The old one is kept intact
-(for reference) and never overwritten.
+If the old user ran Syncthing, keep the **same device identity** so the hub/peers
+see the same device, not a new one:
 
-### 3. Find extra session files
+- Copy the Syncthing config dir **including `key.pem` + `cert.pem`** to
+  `/home/domovoy/.config/syncthing/`, chown 588.
+- Rewrite `config.xml`: folder **paths** → `/home/domovoy/...`; optionally folder
+  **IDs**/labels (e.g. `assistant-*` → `domovoy-*`).
+- **Never run two Syncthing instances with the same device ID at once.** Stop the
+  old one, `disable` it (so it can't auto-start on reboot), then start domovoy's.
+- Update the hub/NAS to the new folders (block-hashing → no real re-transfer).
+- See the `syncthing-setup` skill for the leaf/hub + versioning architecture.
 
-The agent checks for any opencode files not in the standard locations and adds them
-to the `EXTRA_FILES` array in the migration script.
+### Phase C — Cutover (HUMAN runs from a root TTY; opencode is stopped)
 
-### 4. Customize migrate.sh
+A script (prepared by the agent) that does the brief-downtime switch:
+1. Stop the old user's opencode + timers (+ Syncthing if not already moved).
+2. Copy the **live** opencode state fresh → domovoy:
+   `.local/share/opencode/` (sessions/auth/db), `.local/state/opencode/`,
+   `.config/opencode/`, `.cache/opencode/`, `.local/share/opentui/`.
+3. chown domovoy home to 588.
+4. Enable + start domovoy's Syncthing + opencode + timers.
+5. Reconnect the client — now served by `domovoy`.
 
-The agent takes `migrate.sh.template` from this repo and fills in:
-- `__FILL_HOSTNAME__` → the machine's hostname
-- `EXTRA_FILES=()` → any additional files found during audit
-- `__AGENT_AGENTS_MERGE_NOTES__` → a summary of what was merged/updated
+> Controlling per-user services from root:
+> `sudo -u <user> XDG_RUNTIME_DIR=/run/user/<uid> systemctl --user <cmd>`
 
-### 5. Present to you
+### Phase D — Verify, then remove the old user (agent does this as domovoy)
 
-The agent shows you the customized `migrate.sh` and the merged `AGENTS.md` for review.
+- Verify: skills load, sessions/auth present, opencode + syncthing active, timers
+  armed, port listening, Syncthing "Up to Date" with the hub.
+- **Move** deferred `models/`/`aur/`; **reconcile** any files the old user's home
+  still holds that are newer than the copies (e.g. maintenance reports written
+  during the migration) — copy the newer version over before deleting.
+- Clean regenerables + temp.
+- Audit for stray files: `find / -xdev -uid <old_uid>` across all mounts.
+- Teardown: stop old services, `loginctl disable-linger <old>`,
+  `userdel -r <old>`, remove `/etc/sudoers.d/<old>` + linger file.
 
-## Your workflow (what you do)
+**UID note:** the old agent user may have had a regular UID (≥1000). `domovoy` is
+a **system UID (588)**. Because we *copy* into a fresh `domovoy` home and chown to
+588 as we go, there's no in-place renumber; just verify no files remain owned by
+the old UID before deleting the old user.
 
-### 1. Review
+---
 
-Read the customized `migrate.sh` and the merged `AGENTS.md`. Confirm that:
-- Your conventions and rules are preserved in AGENTS.md
-- File paths in the script are correct
-- No important files were missed
+## §C — Migrate FROM a regular human `user`
 
-### 2. Stop opencode
+opencode ran under your normal login account. You are NOT removing that account —
+you are extracting opencode into its own `domovoy` identity so it stops living in
+your personal home.
 
-If running as a service:
-```bash
-systemctl stop opencode.service
-```
+1. **Create** `domovoy` (§ system user, as above).
+2. **Copy** only opencode's data (the table at the top) from `~/.config/opencode`,
+   `~/.local/share/opencode`, `~/.local/state/opencode`, `~/.cache/opencode`,
+   `~/.agents` (or `~/.opencode`), plus any `setup/`, `maintenance/` you keep,
+   into `/home/domovoy`, chown 588. Do NOT copy unrelated personal files.
+3. **Merge AGENTS.md** as in §A.
+4. **Cutover:** stop opencode in your account; start it as the `domovoy` user
+   service; reconnect.
+5. **Do NOT delete your human account.** Just remove the opencode bits from it if
+   you want a clean split (optional). Your login stays intact.
 
-If running as a one-off process:
-```bash
-kill $(pgrep -f opencode)
-```
+---
 
-### 3. Run the migration
+## Firewall configuration (all scenarios)
 
-```bash
-sudo bash /path/to/migrate.sh
-```
-
-The script creates the assistant user (if needed), copies all files, installs service
-units and timers, sets up Syncthing and the SSH gateway, and enables everything.
-
-### 4. Verify
-
-```bash
-ps aux | grep opencode | grep -v grep
-journalctl --user --machine=assistant@ -u opencode.service -n 10
-```
-
-### 5. Clean up root (the script prompts)
-
-The script asks whether to remove old opencode files from `/root/`. Answer `y` or `n`.
-Backup copies remain in `/home/assistant/` regardless.
-
-## After migration
-
-- Your AGENTS.md has been merged — review it and iterate
-- Syncthing is running — add remote device IDs to pair with other assistant instances
-- SSH keys have been generated and will sync to other machines
-- The assistant now runs as a proper non-root user with health monitoring and nightly restarts
-
-## Firewall configuration
-
-After migration, the script prompts you to configure opencode's network access.
-Choose based on your security needs:
+After migration, configure opencode's network access to taste. **Never expose a
+listening port without deciding this deliberately.**
 
 | Mode | Who can connect | nftables rule | When to use |
 |------|----------------|--------------|-------------|
-| **1 — localhost** | Only this machine | `tcp dport 4096 accept` on loopback | SSH tunnel is your entry point |
-| **2 — local network** | Devices on your LAN | `ip saddr <subnet> tcp dport 4096 accept` | Connect from other machines at home |
-| **3 — open** | Anyone on the internet | `tcp dport 4096 accept` | Cloud deployments, remote access without VPN |
+| **1 — localhost** | Only this machine | loopback `tcp dport 4096 accept` | SSH tunnel is your entry point |
+| **2 — local network** | Devices on your LAN | `ip saddr <subnet> tcp dport 4096 accept` | Connect from home machines |
+| **3 — open** | Anyone | `tcp dport 4096 accept` | Cloud/remote (understand the risk) |
 
-The script asks for your LAN subnet if you choose option 2. The rule is added to
-nftables immediately. Add it to `/etc/nftables.conf` for persistence across reboots.
-
-If you skip during migration, you can always add the rule later:
+Add the chosen rule to `/etc/nftables.conf` for persistence. Add later with:
 ```bash
 nft add rule inet filter input ip saddr <subnet> tcp dport 4096 accept
 ```
+
+---
+
+## After migration
+
+- Review the merged AGENTS.md and iterate.
+- **Name your Domovoy:** on first session it may offer to take a personal name;
+  the system identity stays `domovoy`, only the display name changes.
+- Syncthing is running — pair remote device IDs; set File Versioning on the
+  central hub/NAS (see `syncthing-setup` skill), not on leaves.
+- The Domovoy now runs as a system user with health monitoring and nightly
+  restarts.

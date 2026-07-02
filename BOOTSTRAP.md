@@ -1,21 +1,37 @@
-# BOOTSTRAP — Assistant Setup From Scratch
+# BOOTSTRAP — Domovoy Setup From Scratch
 
-Set up the `assistant` AI agent on a fresh Linux machine. Creates a dedicated non-root user, clones this repo, and configures opencode as a user-level service with health monitoring, cross-machine SSH access, and Syncthing sync.
+Set up the `domovoy` AI agent on a fresh Linux machine. Creates a dedicated system user (UID < 1000), clones this repo, and configures opencode as a user-level service with health monitoring, cross-machine SSH access, and Syncthing sync.
 
-## 1. Create the assistant user
+## 1. Create the domovoy user
 
 ```bash
-useradd -m -s /bin/bash assistant
-echo "assistant ALL=(ALL) NOPASSWD: ALL" > /etc/sudoers.d/assistant
-loginctl enable-linger assistant
+useradd -r -m -d /home/domovoy -s /bin/bash -u 588 domovoy
+echo "domovoy ALL=(ALL) NOPASSWD: ALL" > /etc/sudoers.d/domovoy
+loginctl enable-linger domovoy
 ```
 
 Lingering keeps the user's systemd session alive without login — required for timers and Syncthing.
 
+### Shell choice
+
+Domovoy's login shell is `/bin/bash` if this machine will **collaborate with
+other Domovoys** (receives SSH/rsync migrations from peer machines). A **solo**
+machine (single domovoy, never a migration target) can use `nologin` for tighter
+security — local operation is unaffected since opencode execs `bash` directly
+and systemd services bypass the login shell. Reversible with `usermod -s`.
+
+```bash
+# Collaborative (peer fleet, receives SSH):
+useradd -r -m -d /home/domovoy -s /bin/bash -u 588 domovoy
+
+# Solo machine (local only, no SSH inbound):
+useradd -r -m -d /home/domovoy -s /usr/bin/nologin -u 588 domovoy
+```
+
 ## 2. Clone this repo
 
 ```bash
-sudo -u assistant git clone https://github.com/alexindigo/assistant-bootstrap.git /home/assistant/.agents
+sudo -u domovoy git clone https://github.com/alexindigo/domovoy-bootstrap.git /home/domovoy/.agents
 ```
 
 The repo provides: AGENTS.md (identity), skill definitions, and templates.
@@ -23,24 +39,24 @@ The repo provides: AGENTS.md (identity), skill definitions, and templates.
 ## 3. Create directory structure
 
 ```bash
-sudo -u assistant mkdir -p /home/assistant/{.config/opencode,.local/bin,setup/$(hostname),maintenance/{reports,tasks},models}
+sudo -u domovoy mkdir -p /home/domovoy/{.config/opencode,.local/bin,setup/$(hostname),maintenance/{reports,tasks},models}
 ```
 
 ## 4. Set up AGENTS.md symlink
 
 ```bash
-sudo -u assistant ln -sf .agents/AGENTS.md /home/assistant/AGENTS.md
+sudo -u domovoy ln -sf .agents/AGENTS.md /home/domovoy/AGENTS.md
 ```
 
 opencode reads `AGENTS.md` from its working directory. The symlink points to the cloned repo copy.
 
 ## 5. Configure opencode service
 
-Create `/home/assistant/.config/systemd/user/opencode.service` from the template:
+Create `/home/domovoy/.config/systemd/user/opencode.service` from the template:
 
 ```bash
-sudo -u assistant cp /home/assistant/.agents/templates/opencode.service \
-    /home/assistant/.config/systemd/user/opencode.service
+sudo -u domovoy cp /home/domovoy/.agents/templates/opencode.service \
+    /home/domovoy/.config/systemd/user/opencode.service
 ```
 
 Or create it manually:
@@ -63,20 +79,20 @@ WantedBy=default.target
 ```
 
 - `MemoryMax=16G` — systemd kills and restarts if memory leaks exceed 16 GB
-- `WorkingDirectory=%h` — resolves to `/home/assistant`, where AGENTS.md lives
+- `WorkingDirectory=%h` — resolves to `/home/domovoy`, where AGENTS.md lives
 
 ## 6. Set up health check watchdog
 
 Copy templates:
 
 ```bash
-sudo -u assistant cp /home/assistant/.agents/templates/opencode-health-check \
-    /home/assistant/.local/bin/opencode-health-check
-sudo -u assistant chmod +x /home/assistant/.local/bin/opencode-health-check
-sudo -u assistant cp /home/assistant/.agents/templates/opencode-health.service \
-    /home/assistant/.config/systemd/user/opencode-health.service
-sudo -u assistant cp /home/assistant/.agents/templates/opencode-health.timer \
-    /home/assistant/.config/systemd/user/opencode-health.timer
+sudo -u domovoy cp /home/domovoy/.agents/templates/opencode-health-check \
+    /home/domovoy/.local/bin/opencode-health-check
+sudo -u domovoy chmod +x /home/domovoy/.local/bin/opencode-health-check
+sudo -u domovoy cp /home/domovoy/.agents/templates/opencode-health.service \
+    /home/domovoy/.config/systemd/user/opencode-health.service
+sudo -u domovoy cp /home/domovoy/.agents/templates/opencode-health.timer \
+    /home/domovoy/.config/systemd/user/opencode-health.timer
 ```
 
 The health check curls `localhost:4096/health` every 30 seconds. If unresponsive for 30 seconds, it restarts the service.
@@ -84,17 +100,17 @@ The health check curls `localhost:4096/health` every 30 seconds. If unresponsive
 ## 7. Set up nightly restart timer
 
 ```bash
-sudo -u assistant cp /home/assistant/.agents/templates/opencode-restart.service \
-    /home/assistant/.config/systemd/user/opencode-restart.service
-sudo -u assistant cp /home/assistant/.agents/templates/opencode-restart.timer \
-    /home/assistant/.config/systemd/user/opencode-restart.timer
+sudo -u domovoy cp /home/domovoy/.agents/templates/opencode-restart.service \
+    /home/domovoy/.config/systemd/user/opencode-restart.service
+sudo -u domovoy cp /home/domovoy/.agents/templates/opencode-restart.timer \
+    /home/domovoy/.config/systemd/user/opencode-restart.timer
 ```
 
 `try-restart` only restarts if running. Timer fires daily at 04:00. Prevents long-running memory leaks from accumulating.
 
 ## 8. Configure opencode provider
 
-Edit `/home/assistant/.config/opencode/opencode.jsonc` to set your AI provider:
+Edit `/home/domovoy/.config/opencode/opencode.jsonc` to set your AI provider:
 
 ```jsonc
 {
@@ -105,30 +121,30 @@ Edit `/home/assistant/.config/opencode/opencode.jsonc` to set your AI provider:
 }
 ```
 
-For local models, see the full guide in the assistant-bootstrap repo.
+For local models, see the full guide in the domovoy-bootstrap repo.
 
 ## 9. Generate SSH key + set up Syncthing
 
-The assistant needs cross-machine access. Generate an SSH key and set up Syncthing
+The domovoy needs cross-machine access. Generate an SSH key and set up Syncthing
 to share skills, machine profiles, and SSH public keys between instances.
 
 ### Generate SSH key
 
 ```bash
-sudo -u assistant ssh-keygen -t ed25519 -N "" \
-    -C "assistant@$(hostname)" -f /home/assistant/.ssh/id_ed25519
-sudo -u assistant cp /home/assistant/.ssh/id_ed25519.pub \
-    /home/assistant/setup/$(hostname)/ssh.pub
+sudo -u domovoy ssh-keygen -t ed25519 -N "" \
+    -C "domovoy@$(hostname)" -f /home/domovoy/.ssh/id_ed25519
+sudo -u domovoy cp /home/domovoy/.ssh/id_ed25519.pub \
+    /home/domovoy/setup/$(hostname)/ssh.pub
 ```
 
 The public key syncs to other machines via Syncthing. The SSH gateway (below) adds it
-to `authorized_keys` so every assistant can reach every other.
+to `authorized_keys` so every domovoy can reach every other.
 
 ### Install Syncthing
 
 ```bash
 sudo pacman -S syncthing   # Arch. Other distros: use your system's package manager.
-sudo -u assistant syncthing generate --home=/home/assistant/.config/syncthing
+sudo -u domovoy syncthing generate --home=/home/domovoy/.config/syncthing
 ```
 
 Configure custom ports (won't conflict with other syncthing instances on the same machine):
@@ -137,7 +153,7 @@ Configure custom ports (won't conflict with other syncthing instances on the sam
 - Discovery: `22133`
 - GUI: disabled (headless)
 
-Edit `/home/assistant/.config/syncthing/config.xml`:
+Edit `/home/domovoy/.config/syncthing/config.xml`:
 ```xml
 <options>
     <listenAddress>tcp://0.0.0.0:22013</listenAddress>
@@ -148,8 +164,8 @@ Edit `/home/assistant/.config/syncthing/config.xml`:
 
 Add shared folders in `config.xml`:
 ```xml
-<folder id="assistant-agents" label="Assistant Skills" path="/home/assistant/.agents" type="sendreceive" .../>
-<folder id="assistant-setup" label="Assistant Profiles" path="/home/assistant/setup" type="sendreceive" .../>
+<folder id="domovoy-agents" label="Domovoy Skills &amp; Identity" path="/home/domovoy/.agents" type="sendreceive" .../>
+<folder id="domovoy-setup" label="Domovoy Machine Profiles" path="/home/domovoy/setup" type="sendreceive" .../>
 ```
 
 ### Pair with existing machines
@@ -160,7 +176,7 @@ NAT traversal, and relay automatically.
 ### Enable Syncthing
 
 ```bash
-sudo -u assistant systemctl --user enable --now syncthing.service
+sudo -u domovoy systemctl --user enable --now syncthing.service
 ```
 
 ## 10. Set up SSH key gateway
@@ -168,17 +184,17 @@ sudo -u assistant systemctl --user enable --now syncthing.service
 When Syncthing syncs another machine's `ssh.pub`, this gateways adds it to `authorized_keys`:
 
 ```bash
-sudo -u assistant cp /home/assistant/.agents/templates/rebuild-authorized-keys \
-    /home/assistant/.local/bin/rebuild-authorized-keys
-sudo -u assistant chmod +x /home/assistant/.local/bin/rebuild-authorized-keys
-sudo -u assistant cp /home/assistant/.agents/templates/assistant-ssh-gateway.service \
-    /home/assistant/.config/systemd/user/assistant-ssh-gateway.service
-sudo -u assistant cp /home/assistant/.agents/templates/assistant-ssh-gateway.path \
-    /home/assistant/.config/systemd/user/assistant-ssh-gateway.path
+sudo -u domovoy cp /home/domovoy/.agents/templates/rebuild-authorized-keys \
+    /home/domovoy/.local/bin/rebuild-authorized-keys
+sudo -u domovoy chmod +x /home/domovoy/.local/bin/rebuild-authorized-keys
+sudo -u domovoy cp /home/domovoy/.agents/templates/domovoy-ssh-gateway.service \
+    /home/domovoy/.config/systemd/user/domovoy-ssh-gateway.service
+sudo -u domovoy cp /home/domovoy/.agents/templates/domovoy-ssh-gateway.path \
+    /home/domovoy/.config/systemd/user/domovoy-ssh-gateway.path
 ```
 
 The path watcher monitors `~/setup/` and rebuilds `~/.ssh/authorized_keys` whenever
-a new `ssh.pub` arrives. This makes every assistant instance SSH-reachable from every other.
+a new `ssh.pub` arrives. This makes every domovoy instance SSH-reachable from every other.
 
 
 ## 10a. Configure network access (nftables)
@@ -201,19 +217,19 @@ The migration script asks this interactively. For a fresh install, add the rule 
 ## 11. Enable everything
 
 ```bash
-sudo -u assistant systemctl --user daemon-reload
-sudo -u assistant systemctl --user enable --now \
+sudo -u domovoy systemctl --user daemon-reload
+sudo -u domovoy systemctl --user enable --now \
     opencode.service \
     opencode-health.timer \
     opencode-restart.timer \
     syncthing.service \
-    assistant-ssh-gateway.path
+    domovoy-ssh-gateway.path
 ```
 
 ## 12. Create machine profile
 
 ```bash
-sudo -u assistant mkdir -p /home/assistant/setup/$(hostname)
+sudo -u domovoy mkdir -p /home/domovoy/setup/$(hostname)
 ```
 
 Create `setup/<hostname>/SYSTEM_INFO.md` with hardware specs, OS details, and storage layout.
@@ -228,10 +244,10 @@ Load the `system-info` skill for guidance on what to include.
 - [ ] `curl http://localhost:4096/health` returns 200
 - [ ] opencode reads AGENTS.md (skills load correctly)
 - [ ] `sudo whoami` works (passwordless sudo)
-- [ ] `loginctl show-user assistant | grep Linger` shows `yes`
+- [ ] `loginctl show-user domovoy | grep Linger` shows `yes`
 - [ ] `systemctl --user status syncthing.service` is `active`
-- [ ] `ls /home/assistant/setup/$(hostname)/ssh.pub` exists
-- [ ] `systemctl --user status assistant-ssh-gateway.path` shows `active (waiting)`
+- [ ] `ls /home/domovoy/setup/$(hostname)/ssh.pub` exists
+- [ ] `systemctl --user status domovoy-ssh-gateway.path` shows `active (waiting)`
 
 ## What's next
 
