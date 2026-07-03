@@ -31,68 +31,17 @@ and commits with a fingerprint-derived email (`<8-hex-chars>@domovoy`).
 
 ---
 
-## 1. Assistant User & Identity
+## 1. Identity & Conventions
 
 The domovoy runs as a dedicated system user (UID 588) with passwordless sudo.
+OS-level setup (user creation, `sudoers`, `loginctl enable-linger`) is covered
+in **BOOTSTRAP.md** (same repo). That document is the step-by-step D-Day
+operation — paste it into a root opencode and follow along.
 
-### 1.1 Create the domovoy system user
+Once the domovoy user exists with SSH keys on GitHub and both repos cloned to
+`~/Public/`, come back here for the AI agent layer.
 
-```bash
-useradd -r -m -d /home/domovoy -s /bin/bash -u 588 domovoy
-echo "domovoy ALL=(ALL) NOPASSWD: ALL" > /etc/sudoers.d/domovoy
-loginctl enable-linger domovoy
-```
-
-`-r` creates a system user (UID < 1000). UID 588 is chosen to avoid collisions
-with packaged daemons (which fill downward from 999). The login shell is
-`/bin/bash` if this domovoy will collaborate with other domovoys (peer fleet,
-receives SSH/rsync); a solo machine can use `/usr/bin/nologin` — local operation
-is unaffected. Reversible: `usermod -s /bin/bash domovoy` at any time.
-See BOOTSTRAP.md for rationale.
-
-Lingering keeps the user's systemd session alive without a login — required for
-timers and Syncthing.
-
-### 1.2 Directory structure
-
-```
-/home/domovoy/
-├── AGENTS.md → .agents/AGENTS.md    # symlink — core identity and rules
-├── .agents/                          # synced skills and identity
-│   ├── AGENTS.md                     # shared personality
-│   └── skills/                       # reusable skill definitions
-├── .config/opencode/
-│   └── opencode.jsonc                # machine-local provider config
-├── setup/
-│   └── <hostname>/                   # machine-specific documentation
-│       ├── SYSTEM_INFO.md            # dictionary of current state
-│       └── SYSTEM_SETUP.md           # blueprint to rebuild
-├── maintenance/
-│   ├── reports/                      # daily change log (binlog)
-│   └── tasks/                        # pending task notes
-└── .config/systemd/user/             # user-level services and timers
-```
-
-**`AGENTS.md` as symlink:** The real file lives in `.agents/AGENTS.md` so it can be synced across machines. The symlink at `~/AGENTS.md` is transparent to opencode.
-
-**Example — our setup:**
-```
-/home/domovoy/
-├── AGENTS.md → .agents/AGENTS.md
-├── .agents/
-│   ├── AGENTS.md
-│   └── skills/
-│       ├── aur-build/SKILL.md
-│       ├── maintenance-report/SKILL.md
-│       ├── system-documentation/SKILL.md
-│       └── system-info/SKILL.md
-├── setup/<hostname>/
-│   ├── SYSTEM_INFO.md
-│   └── SYSTEM_SETUP.md
-└── ...
-```
-
-### 1.3 AGENTS.md — the identity file
+### AGENTS.md — the identity file
 
 The minimum viable AGENTS.md:
 
@@ -122,110 +71,12 @@ The file will grow as you add conventions, but this is enough to start safely.
 
 ## 2. opencode Service Configuration
 
-### 2.1 User-level service unit
+The opencode user service, health-check watchdog, nightly restart timer, and
+systemd unit files are covered in **BOOTSTRAP.md**. That document contains the
+step-by-step commands to create, enable, and start all services. It also covers
+network access (nftables) and Syncthing setup.
 
-Run opencode as a user service (not a system service). This keeps it under the domovoy's session and avoids root.
-
-`~/.config/systemd/user/opencode.service`:
-
-```ini
-[Unit]
-Description=opencode headless server
-After=network.target
-
-[Service]
-Type=simple
-ExecStart=/usr/bin/opencode serve --hostname 0.0.0.0 --port 4096
-Restart=on-failure
-RestartSec=5
-MemoryMax=16G
-WorkingDirectory=%h
-
-[Install]
-WantedBy=default.target
-```
-
-Key settings:
-- `MemoryMax=16G` — systemd sends SIGKILL if RSS exceeds 16 GB. Combined with `Restart=on-failure`, the server self-recovers from memory leaks.
-- `WorkingDirectory=%h` — resolves to the domovoy's home directory.
-
-### 2.2 Health check watchdog
-
-`Restart=on-failure` only triggers on crashes, not hangs. Add an HTTP health check that curls the server every 30 seconds:
-
-`~/.local/bin/opencode-health-check`:
-```bash
-#!/usr/bin/env bash
-if ! curl -m 30 -sf http://localhost:4096/health > /dev/null 2>&1; then
-    logger -t opencode-health "opencode unresponsive after 30s, restarting"
-    systemctl --user restart opencode.service
-fi
-```
-
-`~/.config/systemd/user/opencode-health.service`:
-```ini
-[Unit]
-Description=opencode HTTP health check
-Wants=network.target
-After=network.target
-
-[Service]
-Type=oneshot
-ExecStart=%h/.local/bin/opencode-health-check
-```
-
-`~/.config/systemd/user/opencode-health.timer`:
-```ini
-[Unit]
-Description=Check opencode health every 30s
-
-[Timer]
-OnUnitActiveSec=30s
-AccuracySec=2s
-
-[Install]
-WantedBy=timers.target
-```
-
-### 2.3 Nightly restart
-
-Proactive restart clears accumulated memory before it hits the cap:
-
-`~/.config/systemd/user/opencode-restart.service`:
-```ini
-[Unit]
-Description=Nightly opencode restart
-
-[Service]
-Type=oneshot
-ExecStart=/usr/bin/systemctl --user try-restart opencode.service
-```
-
-`~/.config/systemd/user/opencode-restart.timer`:
-```ini
-[Unit]
-Description=Restart opencode daily at 4am
-
-[Timer]
-OnCalendar=*-*-* 04:00:00
-Persistent=true
-
-[Install]
-WantedBy=timers.target
-```
-
-### 2.4 Enable everything
-
-```bash
-chmod +x ~/.local/bin/opencode-health-check
-systemctl --user daemon-reload
-systemctl --user enable --now \
-    opencode.service \
-    opencode-health.timer \
-    opencode-restart.timer
-```
-
-### 2.5 Critical rule: NEVER restart opencode yourself
+### Critical rule: NEVER restart opencode yourself
 
 The domovoy runs INSIDE the opencode server. Restarting it kills the connection mid-session. When a change requires a server restart, create a script and ask the human user to run it.
 

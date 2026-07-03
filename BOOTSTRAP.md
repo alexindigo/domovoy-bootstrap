@@ -301,6 +301,17 @@ Load the `system-info` skill for guidance on what to include.
 
 ## What's next
 
+The domovoy now exists with SSH keys on GitHub and both repos cloned to
+`~/Public/`. Continue with **DOMOVOY_SETUP.md** (in this repo) to build the
+AI agent layer: model pool architecture, llama.cpp setup, and opencode
+provider configuration.
+
+If you're migrating from an existing setup (root, a prior agent user like
+`assistant`, or a regular login), see **MIGRATION.md** in this repo.
+
+For maintenance going forward:
+- Create `setup/<hostname>/SYSTEM_INFO.md` and `SYSTEM_SETUP.md` per the
+  `system-info` and `system-documentation` skills
 - Add remote device IDs to Syncthing config to pair machines
-- Create `SYSTEM_SETUP.md` — the rebuild blueprint for this machine
+- Load the `syncthing-setup` skill for NAS/central-hub configuration
 - See `ASSISTANT_SETUP.md` in the repo for local AI model setup
