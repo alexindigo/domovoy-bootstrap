@@ -63,6 +63,35 @@ goes to `setup/<hostname>/ssh.pub` for cross-machine SSH fleet access.
 sudo -u domovoy mkdir -p /home/domovoy/{Public,.config/opencode,.local/bin,setup/$(hostname),maintenance/{reports,tasks},models}
 ```
 
+Populate the machine's environment file for fleet-specific service URLs:
+
+```bash
+sudo -u domovoy tee /home/domovoy/setup/$(hostname)/ENVIRONMENT.md <<'EOF' >/dev/null
+# Environment — $(hostname)
+
+## Network
+| Setting | Value |
+|---------|-------|
+| LAN subnet | `<lan-subnet>` |
+| DNS suffix | `.home` |
+
+## Services
+| Service | URL |
+|---------|-----|
+| SearXNG | `<searxng-url>` |
+
+## Syncthing
+| Setting | Value |
+|---------|-------|
+| Hub device ID | `<hub-device-id>` |
+| Hub device name | `<hub-name>` |
+EOF
+```
+
+Customize the values (SearXNG URL, LAN subnet, Syncthing hub ID) for this
+household. This file syncs across the fleet via Syncthing and is read by skills
+that need infrastructure URLs. It is never committed to a public repo.
+
 ## 4. Set up AGENTS.md symlink
 
 ```bash
@@ -170,14 +199,14 @@ sudo -u domovoy syncthing generate --home=/home/domovoy/.config/syncthing
 
 Configure custom ports (won't conflict with other syncthing instances on the same machine):
 
-- Listen: `tcp://0.0.0.0:22013`
+- Listen: `tcp://0.0.0.0:<sync-port>`
 - Discovery: `22133`
 - GUI: disabled (headless)
 
 Edit `/home/domovoy/.config/syncthing/config.xml`:
 ```xml
 <options>
-    <listenAddress>tcp://0.0.0.0:22013</listenAddress>
+    <listenAddress>tcp://0.0.0.0:<sync-port></listenAddress>
     <localAnnouncePort>22133</localAnnouncePort>
 </options>
 <gui enabled="false">...</gui>
