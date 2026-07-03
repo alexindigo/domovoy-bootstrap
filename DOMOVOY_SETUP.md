@@ -385,7 +385,7 @@ curl http://localhost:8080/v1/chat/completions \
 
 1. **Install the SYCL runtime:**
    ```bash
-   sudo pacman -S intel-oneapi-dpcpp-cpp
+   sudo pacman -S intel-oneapi-toolkit
    ```
 2. **Build llama.cpp with SYCL support** from AUR (see aur-build skill):
    ```bash
