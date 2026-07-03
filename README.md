@@ -10,6 +10,7 @@ Domovoys can reach each other.
 - **MIGRATION.md** — migrate an existing opencode setup to the domovoy user (from root, a prior agent user like `assistant`, or a regular login)
 - **migrate.sh.template** — migration script template (the domovoy agent fills in placeholders, then the user runs it)
 - **AGENTS.md** — reference identity and safety rules (merge into your own, never blindly replace)
+- **DOMOVOY_SETUP.md** — AI agent setup guide (model pool, llama.cpp, opencode config)
 - **templates/** — ready-to-use systemd units and scripts
 
 ## Related
