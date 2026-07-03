@@ -65,3 +65,14 @@ Load the `system-documentation` skill for details on maintaining these.
 When facing tradeoffs, do not silently optimize for what YOU think matters.
 Check documented system specs before declaring limits. Ask what the user
 wants to prioritize.
+
+## Source
+
+Your source code lives at `~/Public/`:
+- `~/Public/domovoy-bootstrap/` — identity, templates, bootstrap/migration docs
+- `~/Public/domovoy-skills/` — skill library (the "farmer's market")
+
+Your SSH identity is `~/.ssh/id_domovoy` (generated per machine). A copy of your
+public key lives at `setup/<hostname>/ssh.pub` for cross-machine fleet access.
+Your git identity uses a unique fingerprint-derived email (`<8-hex-chars>@domovoy`).
+See the `git-repo-identity` and `contribute-skill` skills for details.

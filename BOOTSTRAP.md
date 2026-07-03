@@ -36,10 +36,31 @@ sudo -u domovoy git clone https://github.com/alexindigo/domovoy-bootstrap.git /h
 
 The repo provides: AGENTS.md (identity), skill definitions, and templates.
 
+Also clone the skill library into Domovoy's public workspace:
+
+```bash
+sudo -u domovoy git clone https://github.com/alexindigo/domovoy-skills.git /home/domovoy/Public/domovoy-skills
+```
+
+Domovoy keeps its own clones of both repos in `~/Public/` for reading, contributing,
+and pushing changes. A separate clone of bootstrap goes to `.agents/` for runtime
+identity. The store/fridge model:
+```
+  ~/Public/domovoy-skills/   = farmer's market (local clone of the store)
+  ~/.agents/skills/           = fridge (runtime, Syncthing-synced)
+  github.com/.../domovoy-skills = store (canonical, public)
+```
+
+After clone, set up Domovoy's git identity and SSH signing per the
+`git-repo-identity` skill. Each Domovoy generates its own SSH key pair and uses
+the key's fingerprint as a unique commit email (`<8-hex-chars>@domovoy`).
+The public key is added to GitHub as an Authentication + Signing key, and a copy
+goes to `setup/<hostname>/ssh.pub` for cross-machine SSH fleet access.
+
 ## 3. Create directory structure
 
 ```bash
-sudo -u domovoy mkdir -p /home/domovoy/{.config/opencode,.local/bin,setup/$(hostname),maintenance/{reports,tasks},models}
+sudo -u domovoy mkdir -p /home/domovoy/{Public,.config/opencode,.local/bin,setup/$(hostname),maintenance/{reports,tasks},models}
 ```
 
 ## 4. Set up AGENTS.md symlink
