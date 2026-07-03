@@ -140,7 +140,7 @@ Local models come in "quantized" formats. Quantization reduces precision to fit 
 
 Q4_K_M is the recommended starting point — it preserves most of the model's quality at roughly half the VRAM of FP16.
 
-**Add 1–3 GB for context (KV cache).** A 32K context window on a 14B model adds ~2 GB.
+**Add ~2–8 GB for context (KV cache).** A 96K context window on a 14B model adds ~6 GB.
 
 **Practical GPU sizing:**
 
@@ -348,7 +348,7 @@ llama-server \
     --sleep-idle-seconds 300 \
     --n-gpu-layers 99 \
     --host 0.0.0.0 \
-    --ctx-size 32768
+    --ctx-size 98304
 ```
 
 - `source setvars.sh` — sets `LD_LIBRARY_PATH` and oneAPI runtime env (required for SYCL/GPU)
@@ -402,7 +402,7 @@ curl http://localhost:8080/v1/chat/completions \
    source /opt/intel/oneapi/setvars.sh --force >/dev/null 2>&1 || true
    export ONEAPI_DEVICE_SELECTOR=level_zero:0
    llama-server --port 8080 --models-dir ~/models \
-       --models-autoload --sleep-idle-seconds 300 --n-gpu-layers 99 --host 0.0.0.0
+        --models-autoload --sleep-idle-seconds 300 --n-gpu-layers 99 --ctx-size 98304 --host 0.0.0.0
    ```
 5. **Verify** each model responds via curl
 6. **Configure opencode.jsonc** with multi-provider setup
@@ -477,13 +477,13 @@ llama-server \
     --sleep-idle-seconds 300 \
     --n-gpu-layers 99 \
     --host 0.0.0.0 \
-    --ctx-size 32768
+    --ctx-size 98304
 ```
 
 - `source setvars.sh` — sets oneAPI `LD_LIBRARY_PATH` + runtime env (required for SYCL/GPU detection)
 - `ONEAPI_DEVICE_SELECTOR=level_zero:0` — tells oneAPI to use the first Intel GPU (Level Zero backend)
 - `--n-gpu-layers 99` — offloads as many layers as possible to the GPU; llama.cpp will fit what it can in VRAM
-- `--ctx-size 32768` — 32K context window; adjust based on available VRAM
+- `--ctx-size 98304` — 96K context window; adjust based on available VRAM
 
 The server logs startup progress. The first launch is slow (JIT compilation); subsequent starts are faster.
 
@@ -519,7 +519,7 @@ After=network.target
 [Service]
 Type=simple
 # setvars.sh sets the oneAPI LD_LIBRARY_PATH + runtime env (required for SYCL/GPU)
-ExecStart=/usr/bin/bash -c 'source /opt/intel/oneapi/setvars.sh --force >/dev/null 2>&1 || true; export ONEAPI_DEVICE_SELECTOR=level_zero:0; exec /usr/bin/llama-server --models-dir %h/models --port 8080 --n-gpu-layers 99'
+ExecStart=/usr/bin/bash -c 'source /opt/intel/oneapi/setvars.sh --force >/dev/null 2>&1 || true; export ONEAPI_DEVICE_SELECTOR=level_zero:0; exec /usr/bin/llama-server --models-dir %h/models --port 8080 --n-gpu-layers 99 --ctx-size 98304 --sleep-idle-seconds 300'
 Restart=on-failure
 RestartSec=10
 
