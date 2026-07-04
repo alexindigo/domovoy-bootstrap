@@ -1,2 +1,7 @@
 #!/usr/bin/env bash
-cat /home/domovoy/setup/*/ssh.pub > /home/domovoy/.ssh/authorized_keys
+HOST=$(cat /etc/hostname)
+for f in /home/domovoy/setup/*/ssh.pub; do
+    dir=$(basename "$(dirname "$f")")
+    [ "$dir" = "$HOST" ] && continue
+    cat "$f"
+done > /home/domovoy/.ssh/authorized_keys
