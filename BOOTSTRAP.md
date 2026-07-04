@@ -12,10 +12,12 @@ access, then hands off to DOMOVOY_SETUP.md for the AI agent layer.
 useradd -r -m -d /home/domovoy -s /bin/bash -u 588 domovoy
 echo "domovoy ALL=(ALL) NOPASSWD: ALL" > /etc/sudoers.d/domovoy
 loginctl enable-linger domovoy
+usermod -aG systemd-journal domovoy
 ```
 
 Lingering keeps the user's systemd session alive without login — required for
-timers and Syncthing.
+timers and Syncthing. The `systemd-journal` group lets Domovoy read its own
+user services' logs with `journalctl --user`.
 
 ### Shell choice
 
@@ -33,15 +35,69 @@ useradd -r -m -d /home/domovoy -s /bin/bash -u 588 domovoy
 useradd -r -m -d /home/domovoy -s /usr/bin/nologin -u 588 domovoy
 ```
 
-## 2. Clone repos into ~/Public/
+## 2. Set up SSH identity + clone repos
 
-Bring the domovoy-bootstrap identity & templates and the domovoy-skills library
-into the domovoy user's workspace. Both repos are needed for local development
-and contribution — Domovoy maintains its own clones.
+### Generate SSH key
+
+First, create a fleet-standard SSH key pair. Every Domovoy uses the same key name
+(`id_domovoy`) so fleet-wide tools like the SSH key gateway work without custom
+config per machine.
 
 ```bash
-sudo -u domovoy git clone https://github.com/alexindigo/domovoy-bootstrap.git /home/domovoy/Public/domovoy-bootstrap
-sudo -u domovoy git clone https://github.com/alexindigo/domovoy-skills.git /home/domovoy/Public/domovoy-skills
+sudo -u domovoy mkdir -p /home/domovoy/.ssh /home/domovoy/setup/$(hostname)
+sudo -u domovoy ssh-keygen -t ed25519 -N "" \
+    -C "domovoy@$(hostname)" -f /home/domovoy/.ssh/id_domovoy
+```
+
+Create an SSH config for GitHub (the key name is non-standard, so SSH needs an
+explicit `IdentityFile` directive):
+
+```bash
+cat > /home/domovoy/.ssh/config <<'EOF'
+Host github.com
+    HostName github.com
+    User git
+    IdentityFile ~/.ssh/id_domovoy
+EOF
+chown -R domovoy:domovoy /home/domovoy/.ssh
+chmod 600 /home/domovoy/.ssh/id_domovoy
+chmod 644 /home/domovoy/.ssh/id_domovoy.pub /home/domovoy/.ssh/config
+```
+
+Each Domovoy derives its unique commit email from the SSH key fingerprint (first 8
+base64 characters of the SHA256 hash). This email is a stable, anonymous identity
+that carries across machines without leaking topology information:
+
+```bash
+FP=$(ssh-keygen -lf /home/domovoy/.ssh/id_domovoy.pub -E sha256 | awk '{print $2}')
+EMAIL="${FP:7:8}@domovoy"
+echo "$EMAIL"
+```
+
+Copy the public key to the machine profile so it syncs to the fleet via Syncthing:
+
+```bash
+sudo -u domovoy cp /home/domovoy/.ssh/id_domovoy.pub \
+    /home/domovoy/setup/$(hostname)/ssh.pub
+```
+
+> **Add the key above to GitHub.** Go to **Settings → SSH and GPG keys** and
+> add the key at `~/.ssh/id_domovoy.pub` as both an **Authentication Key** and
+> a **Signing Key** (two separate entries, same key). After adding, verify:
+> ```bash
+> ssh -T git@github.com
+> ```
+> Expected output: `Hi <user>! You've successfully authenticated...`
+
+### Clone repos
+
+Now clone the repositories via SSH so Domovoy can push changes back:
+
+```bash
+sudo -u domovoy git clone git@github.com:alexindigo/domovoy-bootstrap.git \
+    /home/domovoy/Public/domovoy-bootstrap
+sudo -u domovoy git clone git@github.com:alexindigo/domovoy-skills.git \
+    /home/domovoy/Public/domovoy-skills
 ```
 
 Both repos follow a store/fridge model:
@@ -59,11 +115,36 @@ Both repos follow a store/fridge model:
 (see step 3) or is built manually from the `~/Public/domovoy-bootstrap/`
 templates for a standalone machine. Nothing clones directly into `.agents/`.
 
-After clone, set up Domovoy's git identity and SSH signing per the
-`git-repo-identity` skill. Each Domovoy generates its own SSH key pair and uses
-the key's fingerprint as a unique commit email (`<8-hex-chars>@domovoy`).
-The public key is added to GitHub as an Authentication + Signing key, and a copy
-goes to `setup/<hostname>/ssh.pub` for cross-machine SSH fleet access.
+After clone, configure per-repo git identity (author name, commit email, and
+SSH signing) per the `git-repo-identity` skill:
+
+```bash
+sudo -u domovoy git -C /home/domovoy/Public/domovoy-bootstrap config user.name "domovoy"
+sudo -u domovoy git -C /home/domovoy/Public/domovoy-bootstrap config user.email "$EMAIL"
+sudo -u domovoy git -C /home/domovoy/Public/domovoy-bootstrap config gpg.format ssh
+sudo -u domovoy git -C /home/domovoy/Public/domovoy-bootstrap config user.signingkey /home/domovoy/.ssh/id_domovoy.pub
+sudo -u domovoy git -C /home/domovoy/Public/domovoy-bootstrap config commit.gpgsign true
+sudo -u domovoy git -C /home/domovoy/Public/domovoy-bootstrap config tag.gpgsign true
+echo "$EMAIL $(cat /home/domovoy/.ssh/id_domovoy.pub)" \
+    > /home/domovoy/Public/domovoy-bootstrap/.git/allowed_signers
+sudo -u domovoy git -C /home/domovoy/Public/domovoy-bootstrap config gpg.ssh.allowedSignersFile .git/allowed_signers
+
+sudo -u domovoy git -C /home/domovoy/Public/domovoy-skills config user.name "domovoy"
+sudo -u domovoy git -C /home/domovoy/Public/domovoy-skills config user.email "$EMAIL"
+sudo -u domovoy git -C /home/domovoy/Public/domovoy-skills config gpg.format ssh
+sudo -u domovoy git -C /home/domovoy/Public/domovoy-skills config user.signingkey /home/domovoy/.ssh/id_domovoy.pub
+sudo -u domovoy git -C /home/domovoy/Public/domovoy-skills config commit.gpgsign true
+sudo -u domovoy git -C /home/domovoy/Public/domovoy-skills config tag.gpgsign true
+echo "$EMAIL $(cat /home/domovoy/.ssh/id_domovoy.pub)" \
+    > /home/domovoy/Public/domovoy-skills/.git/allowed_signers
+sudo -u domovoy git -C /home/domovoy/Public/domovoy-skills config gpg.ssh.allowedSignersFile .git/allowed_signers
+```
+
+Verify the first commit signs correctly:
+```bash
+# If the first commit comes out unsigned (known git 2.54 quirk),
+# amend and re-sign: git commit --amend -S --no-edit
+```
 
 ## 3. Set up Syncthing
 
@@ -72,13 +153,35 @@ runs as a domovoy user-level service. If joining an existing fleet, configure
 it BEFORE installing systemd services — the fleet's templates and skills arrive
 through Syncthing.
 
+### Create essential directories
+
+These directories are needed before Syncthing starts — shared folders, service
+units, and machine profiles need their paths to exist:
+
+```bash
+sudo -u domovoy mkdir -p /home/domovoy/{.agents,.config/{systemd/user,opencode},.local/bin,setup/$(hostname),maintenance/{reports,tasks},models}
+```
+
+### Install and configure
+
 ```bash
 sudo pacman -S syncthing   # Arch. Other distros: use your system's package manager.
 sudo -u domovoy syncthing generate --home=/home/domovoy/.config/syncthing
 ```
 
-Configure fleet-standard ports (won't conflict with other syncthing instances
-on the same machine):
+### Create the service unit
+
+The bootstrap repo ships a `syncthing.service` template (same pattern as the other
+service templates in step 5):
+
+```bash
+sudo -u domovoy cp /home/domovoy/Public/domovoy-bootstrap/templates/syncthing.service \
+    /home/domovoy/.config/systemd/user/syncthing.service
+```
+
+### Configure fleet-standard ports
+
+(won't conflict with other syncthing instances on the same machine):
 
 - Listen: `tcp://0.0.0.0:22013`
 - Discovery: `22133`
@@ -93,10 +196,12 @@ Edit `/home/domovoy/.config/syncthing/config.xml`:
 <gui enabled="false">...</gui>
 ```
 
-Add shared folders in `config.xml`:
+Add shared folders in `config.xml`. Fleet folders should ignore permissions since
+UID/GID differ across machines (`ignorePerms="true"`):
+
 ```xml
-<folder id="domovoy-agents" label="Domovoy Skills &amp; Identity" path="/home/domovoy/.agents" type="sendreceive" .../>
-<folder id="domovoy-setup" label="Domovoy Machine Profiles" path="/home/domovoy/setup" type="sendreceive" .../>
+<folder id="domovoy-agents" label="Domovoy Skills &amp; Identity" path="/home/domovoy/.agents" type="sendreceive" ignorePerms="true" .../>
+<folder id="domovoy-setup" label="Domovoy Machine Profiles" path="/home/domovoy/setup" type="sendreceive" ignorePerms="true" .../>
 ```
 
 ### Pair with existing machines
@@ -111,12 +216,6 @@ sudo -u domovoy systemctl --user enable --now syncthing.service
 ```
 
 Wait for the shared folders to reach "Up to Date" with the fleet before continuing.
-
-### Create directory structure
-
-```bash
-sudo -u domovoy mkdir -p /home/domovoy/{.config/opencode,.local/bin,setup/$(hostname),maintenance/{reports,tasks},models}
-```
 
 ## 4. Set up AGENTS.md symlink
 
