@@ -1,6 +1,10 @@
 # BOOTSTRAP — Domovoy Setup From Scratch
 
-Set up the `domovoy` AI agent on a fresh Linux machine. Creates a dedicated system user (UID < 1000), clones this repo, and configures opencode as a user-level service with health monitoring, cross-machine SSH access, and Syncthing sync.
+Set up the `domovoy` AI agent on a fresh Linux machine. Creates a dedicated
+system user (UID 588), clones the bootstrap and skill repos to `~/Public/`,
+configures Syncthing for fleet sync (with domain-standard ports), installs
+opencode as a user-level service with health monitoring and cross-machine SSH
+access, then hands off to DOMOVOY_SETUP.md for the AI agent layer.
 
 ## 1. Create the domovoy user
 
@@ -10,7 +14,8 @@ echo "domovoy ALL=(ALL) NOPASSWD: ALL" > /etc/sudoers.d/domovoy
 loginctl enable-linger domovoy
 ```
 
-Lingering keeps the user's systemd session alive without login — required for timers and Syncthing.
+Lingering keeps the user's systemd session alive without login — required for
+timers and Syncthing.
 
 ### Shell choice
 
@@ -28,28 +33,31 @@ useradd -r -m -d /home/domovoy -s /bin/bash -u 588 domovoy
 useradd -r -m -d /home/domovoy -s /usr/bin/nologin -u 588 domovoy
 ```
 
-## 2. Clone this repo
+## 2. Clone repos into ~/Public/
+
+Bring the domovoy-bootstrap identity & templates and the domovoy-skills library
+into the domovoy user's workspace. Both repos are needed for local development
+and contribution — Domovoy maintains its own clones.
 
 ```bash
-sudo -u domovoy git clone https://github.com/alexindigo/domovoy-bootstrap.git /home/domovoy/.agents
-```
-
-The repo provides: AGENTS.md (identity), skill definitions, and templates.
-
-Also clone the skill library into Domovoy's public workspace:
-
-```bash
+sudo -u domovoy git clone https://github.com/alexindigo/domovoy-bootstrap.git /home/domovoy/Public/domovoy-bootstrap
 sudo -u domovoy git clone https://github.com/alexindigo/domovoy-skills.git /home/domovoy/Public/domovoy-skills
 ```
 
-Domovoy keeps its own clones of both repos in `~/Public/` for reading, contributing,
-and pushing changes. A separate clone of bootstrap goes to `.agents/` for runtime
-identity. The store/fridge model:
+Both repos follow a store/fridge model:
 ```
-  ~/Public/domovoy-skills/   = farmer's market (local clone of the store)
-  ~/.agents/skills/           = fridge (runtime, Syncthing-synced)
-  github.com/.../domovoy-skills = store (canonical, public)
+  github.com/.../domovoy-bootstrap = store (canonical, public identity + templates)
+  ~/Public/domovoy-bootstrap/       = farmer's market (local clone for dev + push)
+  ~/.agents/                         = fridge (runtime, Syncthing-synced across fleet)
+
+  github.com/.../domovoy-skills    = store (canonical, public skill library)
+  ~/Public/domovoy-skills/          = farmer's market (local clone for dev + push)
+  ~/.agents/skills/                  = fridge (runtime, Syncthing-synced across fleet)
 ```
+
+`~/.agents/` is NOT a git clone — it arrives via Syncthing from the fleet
+(see step 3) or is built manually from the `~/Public/domovoy-bootstrap/`
+templates for a standalone machine. Nothing clones directly into `.agents/`.
 
 After clone, set up Domovoy's git identity and SSH signing per the
 `git-repo-identity` skill. Each Domovoy generates its own SSH key pair and uses
@@ -57,156 +65,29 @@ the key's fingerprint as a unique commit email (`<8-hex-chars>@domovoy`).
 The public key is added to GitHub as an Authentication + Signing key, and a copy
 goes to `setup/<hostname>/ssh.pub` for cross-machine SSH fleet access.
 
-## 3. Create directory structure
+## 3. Set up Syncthing
 
-```bash
-sudo -u domovoy mkdir -p /home/domovoy/{Public,.config/opencode,.local/bin,setup/$(hostname),maintenance/{reports,tasks},models}
-```
-
-Populate the machine's environment file for fleet-specific service URLs:
-
-```bash
-sudo -u domovoy tee /home/domovoy/setup/$(hostname)/ENVIRONMENT.md <<'EOF' >/dev/null
-# Environment — $(hostname)
-
-## Network
-| Setting | Value |
-|---------|-------|
-| LAN subnet | `<lan-subnet>` |
-| DNS suffix | `.home` |
-
-## Services
-| Service | URL |
-|---------|-----|
-| SearXNG | `<searxng-url>` |
-
-## Syncthing
-| Setting | Value |
-|---------|-------|
-| Hub device ID | `<hub-device-id>` |
-| Hub device name | `<hub-name>` |
-EOF
-```
-
-Customize the values (SearXNG URL, LAN subnet, Syncthing hub ID) for this
-household. This file syncs across the fleet via Syncthing and is read by skills
-that need infrastructure URLs. It is never committed to a public repo.
-
-## 4. Set up AGENTS.md symlink
-
-```bash
-sudo -u domovoy ln -sf .agents/AGENTS.md /home/domovoy/AGENTS.md
-```
-
-opencode reads `AGENTS.md` from its working directory. The symlink points to the cloned repo copy.
-
-## 5. Configure opencode service
-
-Create `/home/domovoy/.config/systemd/user/opencode.service` from the template:
-
-```bash
-sudo -u domovoy cp /home/domovoy/.agents/templates/opencode.service \
-    /home/domovoy/.config/systemd/user/opencode.service
-```
-
-Or create it manually:
-
-```ini
-[Unit]
-Description=opencode headless server
-After=network.target
-
-[Service]
-Type=simple
-ExecStart=/usr/bin/opencode serve --hostname 0.0.0.0 --port 4096
-Restart=on-failure
-RestartSec=5
-MemoryMax=16G
-WorkingDirectory=%h
-
-[Install]
-WantedBy=default.target
-```
-
-- `MemoryMax=16G` — systemd kills and restarts if memory leaks exceed 16 GB
-- `WorkingDirectory=%h` — resolves to `/home/domovoy`, where AGENTS.md lives
-
-## 6. Set up health check watchdog
-
-Copy templates:
-
-```bash
-sudo -u domovoy cp /home/domovoy/.agents/templates/opencode-health-check \
-    /home/domovoy/.local/bin/opencode-health-check
-sudo -u domovoy chmod +x /home/domovoy/.local/bin/opencode-health-check
-sudo -u domovoy cp /home/domovoy/.agents/templates/opencode-health.service \
-    /home/domovoy/.config/systemd/user/opencode-health.service
-sudo -u domovoy cp /home/domovoy/.agents/templates/opencode-health.timer \
-    /home/domovoy/.config/systemd/user/opencode-health.timer
-```
-
-The health check curls `localhost:4096/health` every 30 seconds. If unresponsive for 30 seconds, it restarts the service.
-
-## 7. Set up nightly restart timer
-
-```bash
-sudo -u domovoy cp /home/domovoy/.agents/templates/opencode-restart.service \
-    /home/domovoy/.config/systemd/user/opencode-restart.service
-sudo -u domovoy cp /home/domovoy/.agents/templates/opencode-restart.timer \
-    /home/domovoy/.config/systemd/user/opencode-restart.timer
-```
-
-`try-restart` only restarts if running. Timer fires daily at 04:00. Prevents long-running memory leaks from accumulating.
-
-## 8. Configure opencode provider
-
-Edit `/home/domovoy/.config/opencode/opencode.jsonc` to set your AI provider:
-
-```jsonc
-{
-    "model": {
-        "provider": "anthropic",
-        "name": "claude-sonnet-4-20250514"
-    }
-}
-```
-
-For local models, see the full guide in the domovoy-bootstrap repo.
-
-## 9. Generate SSH key + set up Syncthing
-
-The domovoy needs cross-machine access. Generate an SSH key and set up Syncthing
-to share skills, machine profiles, and SSH public keys between instances.
-
-### Generate SSH key
-
-```bash
-sudo -u domovoy ssh-keygen -t ed25519 -N "" \
-    -C "domovoy@$(hostname)" -f /home/domovoy/.ssh/id_ed25519
-sudo -u domovoy cp /home/domovoy/.ssh/id_ed25519.pub \
-    /home/domovoy/setup/$(hostname)/ssh.pub
-```
-
-The public key syncs to other machines via Syncthing. The SSH gateway (below) adds it
-to `authorized_keys` so every domovoy can reach every other.
-
-### Install Syncthing
+Syncthing is how the fleet shares identity, skills, and machine profiles. It
+runs as a domovoy user-level service. If joining an existing fleet, configure
+it BEFORE installing systemd services — the fleet's templates and skills arrive
+through Syncthing.
 
 ```bash
 sudo pacman -S syncthing   # Arch. Other distros: use your system's package manager.
 sudo -u domovoy syncthing generate --home=/home/domovoy/.config/syncthing
 ```
 
-Configure custom ports (won't conflict with other syncthing instances on the same machine):
+Configure fleet-standard ports (won't conflict with other syncthing instances
+on the same machine):
 
-- Listen: `tcp://0.0.0.0:<sync-port>`
+- Listen: `tcp://0.0.0.0:22013`
 - Discovery: `22133`
 - GUI: disabled (headless)
 
 Edit `/home/domovoy/.config/syncthing/config.xml`:
 ```xml
 <options>
-    <listenAddress>tcp://0.0.0.0:<sync-port></listenAddress>
+    <listenAddress>tcp://0.0.0.0:22013</listenAddress>
     <localAnnouncePort>22133</localAnnouncePort>
 </options>
 <gui enabled="false">...</gui>
@@ -229,42 +110,109 @@ NAT traversal, and relay automatically.
 sudo -u domovoy systemctl --user enable --now syncthing.service
 ```
 
-## 10. Set up SSH key gateway
+Wait for the shared folders to reach "Up to Date" with the fleet before continuing.
 
-When Syncthing syncs another machine's `ssh.pub`, this gateways adds it to `authorized_keys`:
+### Create directory structure
 
 ```bash
-sudo -u domovoy cp /home/domovoy/.agents/templates/rebuild-authorized-keys \
+sudo -u domovoy mkdir -p /home/domovoy/{.config/opencode,.local/bin,setup/$(hostname),maintenance/{reports,tasks},models}
+```
+
+## 4. Set up AGENTS.md symlink
+
+On a fleet machine, `~/.agents/AGENTS.md` arrives via Syncthing. On a standalone
+machine, copy it from the bootstrap repo:
+
+```bash
+# Fleet: no action — Syncthing brings .agents/AGENTS.md
+# Standalone:
+sudo -u domovoy cp /home/domovoy/Public/domovoy-bootstrap/AGENTS.md /home/domovoy/.agents/AGENTS.md
+```
+
+Then create the symlink opencode reads:
+```bash
+sudo -u domovoy ln -sf .agents/AGENTS.md /home/domovoy/AGENTS.md
+```
+
+## 5. Install systemd services
+
+Service templates live in the bootstrap repo at `~/Public/domovoy-bootstrap/templates/`.
+
+### opencode service
+
+```bash
+sudo -u domovoy cp /home/domovoy/Public/domovoy-bootstrap/templates/opencode.service \
+    /home/domovoy/.config/systemd/user/opencode.service
+```
+
+The template:
+```ini
+[Unit]
+Description=opencode headless server
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/opencode serve --hostname 0.0.0.0 --port 4096
+Restart=on-failure
+RestartSec=5
+MemoryMax=16G
+WorkingDirectory=%h
+
+[Install]
+WantedBy=default.target
+```
+
+- `MemoryMax=16G` — systemd kills and restarts if memory leaks exceed 16 GB
+- `WorkingDirectory=%h` — resolves to `/home/domovoy`, where AGENTS.md lives
+
+### Health check watchdog
+
+```bash
+sudo -u domovoy cp /home/domovoy/Public/domovoy-bootstrap/templates/opencode-health-check \
+    /home/domovoy/.local/bin/opencode-health-check
+sudo -u domovoy chmod +x /home/domovoy/.local/bin/opencode-health-check
+sudo -u domovoy cp /home/domovoy/Public/domovoy-bootstrap/templates/opencode-health.service \
+    /home/domovoy/.config/systemd/user/opencode-health.service
+sudo -u domovoy cp /home/domovoy/Public/domovoy-bootstrap/templates/opencode-health.timer \
+    /home/domovoy/.config/systemd/user/opencode-health.timer
+```
+
+The health check curls `localhost:4096/health` every 30 seconds. If
+unresponsive for 30 seconds, it restarts the service.
+
+### Nightly restart timer
+
+```bash
+sudo -u domovoy cp /home/domovoy/Public/domovoy-bootstrap/templates/opencode-restart.service \
+    /home/domovoy/.config/systemd/user/opencode-restart.service
+sudo -u domovoy cp /home/domovoy/Public/domovoy-bootstrap/templates/opencode-restart.timer \
+    /home/domovoy/.config/systemd/user/opencode-restart.timer
+```
+
+`try-restart` only restarts if running. Timer fires daily at 04:00. Prevents
+long-running memory leaks from accumulating.
+
+### SSH key gateway
+
+When Syncthing syncs another machine's `ssh.pub`, this gateway adds it to
+`authorized_keys`:
+
+```bash
+sudo -u domovoy cp /home/domovoy/Public/domovoy-bootstrap/templates/rebuild-authorized-keys \
     /home/domovoy/.local/bin/rebuild-authorized-keys
 sudo -u domovoy chmod +x /home/domovoy/.local/bin/rebuild-authorized-keys
-sudo -u domovoy cp /home/domovoy/.agents/templates/domovoy-ssh-gateway.service \
+sudo -u domovoy cp /home/domovoy/Public/domovoy-bootstrap/templates/domovoy-ssh-gateway.service \
     /home/domovoy/.config/systemd/user/domovoy-ssh-gateway.service
-sudo -u domovoy cp /home/domovoy/.agents/templates/domovoy-ssh-gateway.path \
+sudo -u domovoy cp /home/domovoy/Public/domovoy-bootstrap/templates/domovoy-ssh-gateway.path \
     /home/domovoy/.config/systemd/user/domovoy-ssh-gateway.path
 ```
 
-The path watcher monitors `~/setup/` and rebuilds `~/.ssh/authorized_keys` whenever
-a new `ssh.pub` arrives. This makes every domovoy instance SSH-reachable from every other.
+The path watcher monitors `~/setup/` and rebuilds `~/.ssh/authorized_keys`
+whenever a new `ssh.pub` arrives. This makes every domovoy instance
+SSH-reachable from every other.
 
-
-## 10a. Configure network access (nftables)
-
-opencode listens on port 4096. Decide who should reach it:
-
-```bash
-# Option 1: localhost only (most secure)
-# no rule needed — service binds to 0.0.0.0, nftables allows loopback by default
-
-# Option 2: local network (enter your subnet)
-nft add rule inet filter input ip saddr <subnet> tcp dport 4096 accept
-# Add this to /etc/nftables.conf for persistence
-
-# Option 3: open to all networks
-nft add rule inet filter input tcp dport 4096 accept
-```
-
-The migration script asks this interactively. For a fresh install, add the rule manually.
-## 11. Enable everything
+### Enable everything
 
 ```bash
 sudo -u domovoy systemctl --user daemon-reload
@@ -276,42 +224,41 @@ sudo -u domovoy systemctl --user enable --now \
     domovoy-ssh-gateway.path
 ```
 
-## 12. Create machine profile
+## 6. Migration (if replacing a prior agent)
 
-```bash
-sudo -u domovoy mkdir -p /home/domovoy/setup/$(hostname)
-```
+If this machine previously ran opencode under another user (root, a prior agent
+account like `assistant`, or a human user), see **MIGRATION.md** in this repo
+for the full procedure. The migration preserves sessions, auth, and identity
+while switching to `domovoy`. Skip this step for a fresh machine.
 
-Create `setup/<hostname>/SYSTEM_INFO.md` with hardware specs, OS details, and storage layout.
-Load the `system-info` skill for guidance on what to include.
+## 7. Switch to domovoy
+
+Bootstrap is complete. Reconnect your opencode client to `domovoy`'s opencode
+service (port 4096).
+
+---
+
+**BOOTSTRAP ENDS HERE.** The operating system and user-level services are ready.
+Continue with **DOMOVOY_SETUP.md** for the AI agent layer: machine profiles,
+local model pool, and opencode provider configuration.
 
 ---
 
 ## Verification checklist
 
 - [ ] `systemctl --user status opencode.service` shows `active (running)`
-- [ ] `systemctl --user list-timers` shows health, restart timers
+- [ ] `systemctl --user list-timers` shows health, restart timers armed
 - [ ] `curl http://localhost:4096/health` returns 200
-- [ ] opencode reads AGENTS.md (skills load correctly)
 - [ ] `sudo whoami` works (passwordless sudo)
 - [ ] `loginctl show-user domovoy | grep Linger` shows `yes`
 - [ ] `systemctl --user status syncthing.service` is `active`
-- [ ] `ls /home/domovoy/setup/$(hostname)/ssh.pub` exists
+- [ ] Syncthing folders "Up to Date" (if fleet)
 - [ ] `systemctl --user status domovoy-ssh-gateway.path` shows `active (waiting)`
+- [ ] opencode reads AGENTS.md (skills load correctly)
 
 ## What's next
 
-The domovoy now exists with SSH keys on GitHub and both repos cloned to
-`~/Public/`. Continue with **DOMOVOY_SETUP.md** (in this repo) to build the
-AI agent layer: model pool architecture, llama.cpp setup, and opencode
-provider configuration.
-
-If you're migrating from an existing setup (root, a prior agent user like
-`assistant`, or a regular login), see **MIGRATION.md** in this repo.
-
-For maintenance going forward:
-- Create `setup/<hostname>/SYSTEM_INFO.md` and `SYSTEM_SETUP.md` per the
-  `system-info` and `system-documentation` skills
-- Add remote device IDs to Syncthing config to pair machines
-- Load the `syncthing-setup` skill for NAS/central-hub configuration
-- See `ASSISTANT_SETUP.md` in the repo for local AI model setup
+- `DOMOVOY_SETUP.md` — machine profiles, model pool, opencode config
+- `MIGRATION.md` — if moving from a prior agent user
+- `syncthing-setup` skill — NAS/central-hub versioning configuration
+- `git-repo-identity` skill — per-repo git identity with SSH commit signing
