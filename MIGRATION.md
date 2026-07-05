@@ -68,6 +68,10 @@ opencode was set up as root with config under `/root/`.
 5. The script creates `domovoy`, copies files, installs the user service +
    timers, sets up Syncthing + SSH gateway, and prompts to remove old `/root/`
    files (backups remain under `/home/domovoy/`).
+6. After the script completes, load the `opencode-session-migration` skill and
+   follow it. Copying opencode.db is not enough — the session `directory`,
+   `path`, and message `data.cwd` columns must be rewritten or the TUI client
+   will not show migrated sessions. Restart opencode after the DB rewrite.
 
 ---
 
@@ -112,8 +116,11 @@ A script (prepared by the agent) that does the brief-downtime switch:
    `.local/share/opencode/` (sessions/auth/db), `.local/state/opencode/`,
    `.config/opencode/`, `.cache/opencode/`, `.local/share/opentui/`.
 3. chown domovoy home to 588.
-4. Enable + start domovoy's Syncthing + opencode + timers.
-5. Reconnect the client — now served by `domovoy`.
+4. Run the `opencode-session-migration` skill to rewrite session paths in
+   opencode.db. Copying the database file is not enough — the session
+   `directory`, `path`, and `cwd` columns must be rewritten.
+5. Enable + start domovoy's Syncthing + opencode + timers.
+6. Reconnect the client — now served by `domovoy`.
 
 > Controlling per-user services from root, and all other cross-user
 > service management: see the `domovoy-scripts` skill for the mandatory
@@ -150,10 +157,13 @@ your personal home.
    `~/.local/share/opencode`, `~/.local/state/opencode`, `~/.cache/opencode`,
    `~/.agents` (or `~/.opencode`), plus any `setup/`, `maintenance/` you keep,
    into `/home/domovoy`, chown 588. Do NOT copy unrelated personal files.
-3. **Merge AGENTS.md** as in §A.
-4. **Cutover:** stop opencode in your account; start it as the `domovoy` user
+3. Run the `opencode-session-migration` skill to rewrite session paths in
+   opencode.db. Copying the database file is not enough — the session
+   `directory`, `path`, and `cwd` columns must be rewritten.
+4. **Merge AGENTS.md** as in §A.
+5. **Cutover:** stop opencode in your account; start it as the `domovoy` user
    service; reconnect.
-5. **Do NOT delete your human account.** Just remove the opencode bits from it if
+6. **Do NOT delete your human account.** Just remove the opencode bits from it if
    you want a clean split (optional). Your login stays intact.
 
 ---
