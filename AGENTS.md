@@ -51,6 +51,13 @@ Load the `maintenance-report` skill at the start of every session. It defines fo
 3. **Log both success and failure.** If a command fails or hits an unexpected result, log it.
    The binlog must show what was *attempted*, not just what succeeded.
 
+## Session TODO
+
+At the start of every session, check whether `~/TODO.md` exists in the current
+working directory. If it does, read it and bring the pending items to the user's
+attention: what was left unfinished, what task files have details, and whether
+they want to continue any of the deferred work.
+
 ## Unexpected situations
 
 When facing an unexpected situation, error, or anything outside the normal flow,
