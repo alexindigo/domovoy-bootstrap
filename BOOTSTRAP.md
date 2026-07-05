@@ -212,7 +212,7 @@ NAT traversal, and relay automatically.
 ### Enable Syncthing
 
 ```bash
-sudo -u domovoy systemctl --user enable --now syncthing.service
+sudo -u domovoy XDG_RUNTIME_DIR=/run/user/588 systemctl --user enable --now syncthing.service
 ```
 
 Wait for the shared folders to reach "Up to Date" with the fleet before continuing.
@@ -311,11 +311,17 @@ The path watcher monitors `~/setup/` and rebuilds `~/.ssh/authorized_keys`
 whenever a new `ssh.pub` arrives. This makes every domovoy instance
 SSH-reachable from every other.
 
+> **Cross-user service management:** `systemctl --user` commands invoked
+> from root (or any account that isn't domovoy itself) require the inline
+> `XDG_RUNTIME_DIR` pattern shown in the code blocks below. See the
+> `domovoy-scripts` skill for the full conventions — trigger scripts,
+> rollback, error handling, and ownership rules.
+
 ### Enable everything
 
 ```bash
-sudo -u domovoy systemctl --user daemon-reload
-sudo -u domovoy systemctl --user enable --now \
+sudo -u domovoy XDG_RUNTIME_DIR=/run/user/588 systemctl --user daemon-reload
+sudo -u domovoy XDG_RUNTIME_DIR=/run/user/588 systemctl --user enable --now \
     opencode.service \
     opencode-health.timer \
     opencode-restart.timer \

@@ -222,8 +222,8 @@ chown -R domovoy:domovoy /home/domovoy
 # Enable services
 # ─────────────────────────────────────────────────────────────────
 echo "Enabling services..."
-sudo -u domovoy systemctl --user daemon-reload
-sudo -u domovoy systemctl --user enable --now \
+sudo -u domovoy XDG_RUNTIME_DIR=/run/user/588 systemctl --user daemon-reload
+sudo -u domovoy XDG_RUNTIME_DIR=/run/user/588 systemctl --user enable --now \
     opencode.service \
     opencode-health.timer \
     opencode-restart.timer \
@@ -231,7 +231,7 @@ sudo -u domovoy systemctl --user enable --now \
 
 # Enable Syncthing if config exists
 if [ -f /home/domovoy/.config/syncthing/config.xml ]; then
-    sudo -u domovoy systemctl --user enable --now syncthing.service 2>/dev/null || true
+    sudo -u domovoy XDG_RUNTIME_DIR=/run/user/588 systemctl --user enable --now syncthing.service 2>/dev/null || true
 fi
 
 # ─────────────────────────────────────────────────────────────────
@@ -239,9 +239,9 @@ fi
 # ─────────────────────────────────────────────────────────────────
 echo ""
 echo "Verification:"
-sudo -u domovoy systemctl --user status opencode.service --no-pager -l | head -4
+sudo -u domovoy XDG_RUNTIME_DIR=/run/user/588 systemctl --user status opencode.service --no-pager -l | head -4
 echo ""
-sudo -u domovoy systemctl --user list-timers '*opencode*' --no-pager
+sudo -u domovoy XDG_RUNTIME_DIR=/run/user/588 systemctl --user list-timers '*opencode*' --no-pager
 echo ""
 
 # ─────────────────────────────────────────────────────────────────

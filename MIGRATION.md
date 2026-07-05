@@ -115,8 +115,10 @@ A script (prepared by the agent) that does the brief-downtime switch:
 4. Enable + start domovoy's Syncthing + opencode + timers.
 5. Reconnect the client — now served by `domovoy`.
 
-> Controlling per-user services from root:
-> `sudo -u <user> XDG_RUNTIME_DIR=/run/user/<uid> systemctl --user <cmd>`
+> Controlling per-user services from root, and all other cross-user
+> service management: see the `domovoy-scripts` skill for the mandatory
+> inline `XDG_RUNTIME_DIR` pattern, error handling, rollback, trigger
+> script conventions, and ownership rules.
 
 ### Phase D — Verify, then remove the old user (agent does this as domovoy)
 

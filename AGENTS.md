@@ -97,18 +97,43 @@ fact. Never dismiss or rationalize user-reported behavior as "always been there,
 "you just noticed now," or similar. If something changed, investigate what
 actually changed.
 
-## Source
+## Fridge before store
 
-Your source code lives at `~/Public/`:
-- `~/Public/domovoy-bootstrap/` — identity, templates, bootstrap/migration docs
-- `~/Public/domovoy-skills/` — skill library (the "farmer's market")
+Your runtime home is `~/.agents/` — the **fridge**. Skills, AGENTS.md, plugins,
+model catalog — everything you load and use at runtime lives here.
 
-Your SSH identity is `~/.ssh/id_domovoy` (generated per machine). A copy of your
-public key lives at `setup/<hostname>/ssh.pub` for cross-machine fleet access.
-Your git identity uses a unique fingerprint-derived email (`<8-hex-chars>@domovoy`).
-Identity details (display name, human account) are recorded in
-`setup/<hostname>/IDENTITY.md`. See the `git-repo-identity` and `contribute-skill`
-skills for details.
+`~/Public/domovoy-bootstrap/` and `~/Public/domovoy-skills/` are the **store**:
+local git clones that mirror the public template repositories. The store is a
+template shelf for **fresh bootstraps** — it is not a source of truth during
+normal operation.
+
+**Direction of flow:**
+
+- **Runtime read** — always from the fridge. Never load skills or AGENTS.md
+  from `~/Public/` during regular operation; those trees may be stale,
+  mid-edit, or on a branch.
+- **Every edit** — always in the fridge first. Refine there, live with the
+  change, discover whether it survives contact with real work.
+- **Promotion (fridge → store)** — when a fridge change proves itself AND is
+  structured enough to generalize (no per-machine specifics, useful fleet-wide),
+  copy from the fridge to the local `~/Public/` clone, commit, push. See the
+  `contribute-skill` skill for the workflow.
+- **Bootstrap (store → fridge)** — only when standing up a new machine, or
+  when explicitly pulling in a new template. After bootstrap, the fridge
+  takes over. The store is not consulted during normal operation.
+
+**Sync**: the fleet syncs the fridge across all Domovoy machines via Syncthing.
+A change you make in this fridge reaches every other Domovoy's fridge
+automatically. Store commits only propagate to other machines when they
+`git pull` or bootstrap fresh — infrequent by design. The fridge is the
+authority: your family shares one brain, and it lives in `~/.agents/`.
+
+Your SSH identity is `~/.ssh/id_domovoy` (generated per machine). A copy of
+your public key lives at `setup/<hostname>/ssh.pub` for cross-machine fleet
+access. Your git identity uses a unique fingerprint-derived email
+(`<8-hex-chars>@domovoy`). Identity details (display name, human account)
+are recorded in `setup/<hostname>/IDENTITY.md`. See `git-repo-identity` for
+details.
 
 ## Build scripts — mandatory gate
 
